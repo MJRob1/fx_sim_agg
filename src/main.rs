@@ -1,8 +1,9 @@
-use std::{pin::pin, time::Duration};
-use tokio_stream::{StreamExt, StreamMap};
+mod aggregator;
+mod simulator;
+use tokio_stream::StreamExt;
 
 fn main() {
-    let config = fx_sim_agg::get_configs("resources/config.txt");
+    let config = simulator::get_configs("resources/config.txt");
 
     fx_sim_agg::run(async {
         // async returns a future rather than blocking current thread
@@ -11,7 +12,7 @@ fn main() {
         // note: everything inside the async code avoids blocking but any code outside run will
         // block on the run function returning
 
-        let mut map = fx_sim_agg::start_streams(&config);
+        let mut map = simulator::start_streams(&config);
 
         while let Some(val) = map.next().await {
             // await polls the future until future returns Ready.
