@@ -12,9 +12,11 @@ fn main() {
         // note: everything inside the async code avoids blocking but any code outside run will
         // block on the run function returning
 
-        let mut map = simulator::start_streams(&config);
+        // Combine all individual market data streams from each liquidity provider into a single merged stream
+        // that yields values in the order they arrive from the source market data streams
+        let mut merged_streams_map = simulator::start_streams(&config);
 
-        while let Some(val) = map.next().await {
+        while let Some(val) = merged_streams_map.next().await {
             // await polls the future until future returns Ready.
             // If future still pending then control is handed to the runtime
             let (key, message) = val;
