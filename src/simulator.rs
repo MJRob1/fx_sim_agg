@@ -2,6 +2,7 @@ use core::f64;
 use rand::Rng;
 use std::fs;
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::{spawn, sync::mpsc::unbounded_channel, time::sleep};
 use tokio_stream::{Stream, StreamMap, wrappers::UnboundedReceiverStream};
 
@@ -20,7 +21,7 @@ pub fn get_configs(filepath: &str) -> Vec<Config> {
     let mut config_vector: Vec<Config> = Vec::new();
     let mut index = 0;
     for i in &parameters {
-        println!("{i}");
+        // println!("{i}");
         // ignore header line in config file
         if index > 0 {
             let mut fx_params = i.split(",");
@@ -38,7 +39,7 @@ pub fn get_configs(filepath: &str) -> Vec<Config> {
                 three_mill_markup,
                 five_mill_markup,
             };
-            println!("Config is : {config:?}");
+            // println!("Config is : {config:?}");
             config_vector.push(config);
         }
         index += 1;
@@ -65,12 +66,16 @@ pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
     // and send them asynchronously (don't block and wait) every 50 (currently) milliseconds
     let (tx, rx) = unbounded_channel();
 
-    let pip_change: f64 = 0.0004;
+    // async block may outlive the current function, and the config reference only lives for the current function
+    // async blocks are not executed immediately and must either take a reference or ownership of outside variables they use
+    // can't take a reference of config values because config is a shared reference, hence left to take ownership of new variables
+    // from config and use them in the async block below. Also can't use lifetimes because Stream returned from the function can outlive the function
     let mut buy_price = config.buy_price;
     let spread = config.spread;
     let three_mill_markup = config.three_mill_markup;
     let five_mill_markup = config.five_mill_markup;
-    let lp = config.lp.clone(); // NEED TO LOOK AT THIS
+    let lp = config.lp.clone();
+    let fx_pair = config.fx_pair.clone();
 
     spawn(async move {
         // spawn a task to handle the async sleep calls
@@ -94,26 +99,33 @@ pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
             let five_mill_buy_price = ((buy_price + five_mill_markup) * 10000.0).round() / 10000.0;
             let five_mill_sell_price =
                 ((sell_price - five_mill_markup) * 10000.0).round() / 10000.0;
-            let message = buy_price.to_string();
-            println!(
-                "#{} {} new prices before send are buy {} sell {}, 3M buy {}, 3M sell {}, 5M buy {}, 5M sell {}",
-                number,
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+
+            let marketdata = format!(
+                "{} | {} | {} | {} | {} | {} | {} | {} | {}",
                 lp,
+                fx_pair,
                 buy_price,
                 sell_price,
                 three_mill_buy_price,
                 three_mill_sell_price,
                 five_mill_buy_price,
-                five_mill_sell_price
+                five_mill_sell_price,
+                timestamp
             );
+
+            // println!("before send: {marketdata}");
 
             sleep(Duration::from_millis(50)).await;
             // await polls the future until future returns Ready.
             // If future still pending then control is handed to the runtime
 
-            if let Err(send_error) = tx.send(format!("{message}")) {
-                //note format must expand to borrow message and hence you can use it again in the eprintln below
-                eprintln!("Could not send message {message}: {send_error}");
+            if let Err(send_error) = tx.send(format!("{marketdata}")) {
+                //note format must expand to borrow marketdata and hence you can use it again in the eprintln below
+                eprintln!("Could not send message {marketdata}: {send_error}");
                 break;
             };
         }

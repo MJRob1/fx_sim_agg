@@ -2,3 +2,5 @@ Liquidity provider, fx pair, 1M buy price, spread (pips), 3M markup (pips), 5M m
 CITI, USD/EUR, 1.5552, 6, .25, .5
 BARX, USD/EUR, 1.5553, 6, .25, .5
 MS, USD/EUR, 1.5554, 7, .25, .5
+JPMC, USD/EUR, 1.5553, 7, .25, .5
+UBS, USD/EUR, 1.5552, 7, .25, .5
