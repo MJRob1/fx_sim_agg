@@ -1,8 +1,7 @@
 use core::f64;
 use rand::Rng;
 use std::fs;
-use std::time::Duration;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::{spawn, sync::mpsc::unbounded_channel, time::sleep};
 use tokio_stream::{Stream, StreamMap, wrappers::UnboundedReceiverStream};
 
@@ -63,7 +62,7 @@ fn read_config_file(filename: &str) -> Vec<String> {
 
 pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
     // For this liqudity provider in config, create the new market data values
-    // and send them asynchronously (don't block and wait) every 50 (currently) milliseconds
+    // and send them asynchronously (don't block and wait) every random 10-50 milliseconds
     let (tx, rx) = unbounded_channel();
 
     // async block may outlive the current function, and the config reference only lives for the current function
@@ -119,7 +118,8 @@ pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
 
             // println!("before send: {marketdata}");
 
-            sleep(Duration::from_millis(50)).await;
+            let random_sleep = rand::random_range(10..50);
+            sleep(Duration::from_millis(random_sleep)).await;
             // await polls the future until future returns Ready.
             // If future still pending then control is handed to the runtime
 
