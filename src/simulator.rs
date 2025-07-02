@@ -7,8 +7,8 @@ use tokio_stream::{Stream, StreamMap, wrappers::UnboundedReceiverStream};
 
 #[derive(Debug)]
 pub struct Config {
-    pub lp: String,
-    pub fx_pair: String,
+    pub liquidity_provider: String,
+    pub currency_pair: String,
     pub buy_price: f64,
     pub spread: f64,
     pub three_mill_markup: f64,
@@ -24,15 +24,15 @@ pub fn get_configs(filepath: &str) -> Vec<Config> {
         // ignore header line in config file
         if index > 0 {
             let mut fx_params = i.split(",");
-            let lp = fx_params.next().unwrap_or("CITI");
-            let fx_pair = fx_params.next().unwrap_or("USD/EUR");
+            let liquidity_provider = fx_params.next().unwrap_or("CITI");
+            let currency_pair = fx_params.next().unwrap_or("USD/EUR");
             let buy_price = fx_params.next().unwrap_or("1.5552").trim().parse().unwrap();
             let spread = convert_pips(fx_params.next().unwrap_or("6"));
             let three_mill_markup = convert_pips(fx_params.next().unwrap_or(".25"));
             let five_mill_markup = convert_pips(fx_params.next().unwrap_or(".5"));
             let config = Config {
-                lp: String::from(lp),
-                fx_pair: String::from(fx_pair),
+                liquidity_provider: String::from(liquidity_provider),
+                currency_pair: String::from(currency_pair),
                 buy_price,
                 spread,
                 three_mill_markup,
@@ -62,7 +62,7 @@ fn read_config_file(filename: &str) -> Vec<String> {
 
 pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
     // For this liqudity provider in config, create the new market data values
-    // and send them asynchronously (don't block and wait) every random 10-50 milliseconds
+    // and send them asynchronously (don't block and wait) every random 1000-5000 milliseconds
     let (tx, rx) = unbounded_channel();
 
     // async block may outlive the current function, and the config reference only lives for the current function
@@ -73,15 +73,22 @@ pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
     let spread = config.spread;
     let three_mill_markup = config.three_mill_markup;
     let five_mill_markup = config.five_mill_markup;
-    let lp = config.lp.clone();
-    let fx_pair = config.fx_pair.clone();
+    let liquidity_provider = config.liquidity_provider.clone();
+    let currency_pair = config.currency_pair.clone();
 
     spawn(async move {
         // spawn a task to handle the async sleep calls
         // async returns a future rather than blocking current thread
         // move is required to move tx into the async block so it gets ownership and
         // tx closes after last message is sent
-        for number in 1..4 {
+        for number in 1..10 {
+            let random_sleep = rand::random_range(1000..5000);
+            println!("random sleep is {random_sleep}");
+            // await polls the future until future returns Ready.
+            // If future still pending then control is handed to the runtime
+            sleep(Duration::from_millis(random_sleep)).await;
+            // now future has returned ready state and so code below is now executed
+
             // randomly determine whether this is a price rise or fall
             let pip_change: f64 = rand::random_range(1.0..5.0) / 10000.0;
             if rand::rng().random_bool(0.5) {
@@ -105,8 +112,8 @@ pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
 
             let marketdata = format!(
                 "{} | {} | {} | {} | {} | {} | {} | {} | {}",
-                lp,
-                fx_pair,
+                liquidity_provider,
+                currency_pair,
                 buy_price,
                 sell_price,
                 three_mill_buy_price,
@@ -117,11 +124,6 @@ pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
             );
 
             // println!("before send: {marketdata}");
-
-            let random_sleep = rand::random_range(10..50);
-            sleep(Duration::from_millis(random_sleep)).await;
-            // await polls the future until future returns Ready.
-            // If future still pending then control is handed to the runtime
 
             if let Err(send_error) = tx.send(format!("{marketdata}")) {
                 //note format must expand to borrow marketdata and hence you can use it again in the eprintln below

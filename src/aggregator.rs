@@ -1,6 +1,18 @@
 use core::f64;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub struct BookEntry {
+    liquidity_provider: String,
+    price: f64,
+    volume: i32,
+    side: String,
+}
+
+pub struct FxBook {
+    currency_pair: String,
+    buy_book: Vec<BookEntry>,
+    sell_book: Vec<BookEntry>,
+}
 #[derive(Debug)]
 pub struct FxMarketData {
     liquidity_provider: String,
@@ -11,32 +23,6 @@ pub struct FxMarketData {
     timestamp: u128,
     spread: i32,
     max_pips_change: i32,
-}
-
-impl FxMarketData {
-    //   fn update_to_next_value(&mut self) {
-    // Calculate random price change up to a maximum of 5 pips
-    // Randomly add or subtract this price change to calculate new fx rate
-
-    //       let random_pip_change: f64 = rand::random_range(1.0..f64::from(self.max_pips_change));
-    //       let random_price_change = random_pip_change / 10000.0; // Need to change for USD/JPY
-    // round this to 4 decimal places - seems this is the only way to do it in rust?  Need to change to 2 dec places for USD/JPY
-    //       let rounded_price_change = (random_price_change * 10000.0).round() / 10000.0;
-
-    //       if rand::rng().random_bool(0.5) {
-    //           self.buy_prices[0] =
-    //              ((self.buy_prices[0] + rounded_price_change) * 10000.0).round() / 10000.0; // Need to change for USD/JPY
-    //      } else {
-    //          self.buy_prices[0] =
-    //              ((self.buy_prices[0] - rounded_price_change) * 10000.0).round() / 10000.0; // Need to change for USD/JPY
-    //      };
-
-    //      println!(
-    //         "{} {} buy price is {}",
-    //          self.liquidity_provider, self.instrument, self.buy_prices[0]
-    //     );
-
-    // need to update all other values too!
 }
 
 pub fn new(lp: String, instrument: String, price: f64, spread: i32) -> FxMarketData {
@@ -69,11 +55,3 @@ pub fn new(lp: String, instrument: String, price: f64, spread: i32) -> FxMarketD
         max_pips_change,
     }
 }
-//pub fn generate(fx_data: &mut FxMarketData) -> Result<(), Box<dyn Error>> {
-//    for number in 1..4 {
-//        fx_data.update_to_next_value();
-//    }
-//
-//    Ok(())
-//  }
-//}
