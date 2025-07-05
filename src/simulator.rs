@@ -81,9 +81,9 @@ pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
         // async returns a future rather than blocking current thread
         // move is required to move tx into the async block so it gets ownership and
         // tx closes after last message is sent
-        for number in 1..10 {
+        for number in 1..4 {
             let random_sleep = rand::random_range(1000..5000);
-            println!("random sleep is {random_sleep}");
+            //   println!("random sleep is {random_sleep}");
             // await polls the future until future returns Ready.
             // If future still pending then control is handed to the runtime
             sleep(Duration::from_millis(random_sleep)).await;
@@ -139,7 +139,7 @@ pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
 pub fn start_streams(config: &Vec<Config>) -> StreamMap<i32, impl Stream<Item = String>> {
     let mut index = 0;
     let mut map = StreamMap::new();
-    // start a market data simulated stream for each config (lp) value
+    // start a market data simulated stream for each config (liquidity provider) value
     // Combine all individual market data streams from each liquidity provider into a single merged stream map
     for i in config {
         let marketdata = get_marketdata(i);

@@ -21,6 +21,7 @@ fn main() {
             // If future still pending then control is handed to the runtime
             let (key, message) = val;
             println!("key: {key}, val: {message}");
+            aggregator::update_fxbook(message);
         }
     });
 }
