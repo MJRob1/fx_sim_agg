@@ -5,6 +5,8 @@ use tokio_stream::StreamExt;
 fn main() {
     let config = simulator::get_configs("resources/config.txt");
 
+    let mut fx_book = aggregator::new(&config);
+
     fx_sim_agg::run(async {
         // async returns a future rather than blocking current thread
         // run starts a runtime and hands the future to the runtime
@@ -21,7 +23,7 @@ fn main() {
             // If future still pending then control is handed to the runtime
             let (key, message) = val;
             println!("key: {key}, val: {message}");
-            aggregator::update_fxbook(message);
+            aggregator::update_fxbook(message, &fx_book);
         }
     });
 }
