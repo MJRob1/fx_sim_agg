@@ -21,9 +21,11 @@ fn main() {
         while let Some(val) = merged_streams_map.next().await {
             // await polls the future until future returns Ready.
             // If future still pending then control is handed to the runtime
-            let (key, message) = val;
-            println!("key: {key}, val: {message}");
-            aggregator::update_fxbook(message, &fx_book);
+            let (key, market_data) = val;
+            println!("key: {key}, val: {market_data}");
+            // aggregator::update_fxbook(message, &fx_book);
+            fx_book.update(market_data);
         }
     });
+    // println!("fx_book is : {fx_book:?}");
 }
