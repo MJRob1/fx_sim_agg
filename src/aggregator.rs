@@ -1,17 +1,30 @@
 use crate::simulator::Config;
 use core::f64;
+use std::cmp::Ordering;
 #[derive(Debug)]
 pub struct FxBookEntry {
-    liquidity_provider: String,
-    volume: i32,
-    price: f64,
-    side: String,
+    pub liquidity_provider: String,
+    pub volume: i32,
+    pub price: f64,
+    pub side: String,
+}
+
+impl PartialEq for FxBookEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.price == other.price
+    }
+}
+
+impl PartialOrd for FxBookEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.price.partial_cmp(&other.price)
+    }
 }
 #[derive(Debug)]
 pub struct FxBook {
-    currency_pair: String,
-    buy_book: Vec<FxBookEntry>,
-    sell_book: Vec<FxBookEntry>,
+    pub currency_pair: String,
+    pub buy_book: Vec<FxBookEntry>,
+    pub sell_book: Vec<FxBookEntry>,
 }
 
 impl FxBook {
@@ -20,12 +33,22 @@ impl FxBook {
         //println!("in update_fxbook: market_data is {market_data}");
         add_market_data(self, market_data);
 
-        //    if self.buy_book.len() == 0 {
-        //       println!("fxbook is empty");
-        //   } else {
-        //       println!("fxbook length is {}", self.buy_book.len());
-        //   }
+        sort_books(self);
     }
+}
+
+fn sort_books(fx_book: &mut FxBook) {
+    fx_book
+        .buy_book
+        .sort_by(|a, b| a.price.partial_cmp(&b.price).unwrap());
+
+    fx_book
+        .sell_book
+        .sort_by(|a, b| match a.price.partial_cmp(&b.price).unwrap() {
+            Ordering::Less => Ordering::Greater,
+            Ordering::Equal => Ordering::Equal,
+            Ordering::Greater => Ordering::Less,
+        });
 }
 
 fn add_market_data(fx_book: &mut FxBook, market_data: String) {
@@ -71,7 +94,7 @@ fn add_book_entry(
     // need to add return value - Result?
     let new_book_entry = FxBookEntry {
         liquidity_provider: String::from(liquidity_provider),
-        volume: 1,
+        volume,
         price,
         side: String::from(side),
     };
