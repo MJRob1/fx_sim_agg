@@ -1,9 +1,23 @@
 use crate::simulator::Config;
 use core::f64;
 use std::cmp::Ordering;
+
+enum Aggregated<T> {
+    Added,
+    ToAdd(T),
+}
+
 #[derive(Debug)]
 pub struct FxBookEntry {
     pub liquidity_provider: String,
+    pub volume: i32,
+    pub price: f64,
+    pub side: String,
+}
+
+#[derive(Debug)]
+pub struct FxAggBookEntry {
+    pub lp_vol: Vec<(String, i32)>,
     pub volume: i32,
     pub price: f64,
     pub side: String,
@@ -23,8 +37,8 @@ impl PartialOrd for FxBookEntry {
 #[derive(Debug)]
 pub struct FxBook {
     pub currency_pair: String,
-    pub buy_book: Vec<FxBookEntry>,
-    pub sell_book: Vec<FxBookEntry>,
+    pub buy_book: Vec<FxAggBookEntry>,
+    pub sell_book: Vec<FxAggBookEntry>,
 }
 
 impl FxBook {
@@ -40,69 +54,120 @@ impl FxBook {
 fn sort_books(fx_book: &mut FxBook) {
     fx_book
         .buy_book
-        .sort_by(|a, b| a.price.partial_cmp(&b.price).unwrap());
-
-    fx_book
-        .sell_book
         .sort_by(|a, b| match a.price.partial_cmp(&b.price).unwrap() {
             Ordering::Less => Ordering::Greater,
             Ordering::Equal => Ordering::Equal,
             Ordering::Greater => Ordering::Less,
         });
+
+    fx_book
+        .sell_book
+        .sort_by(|a, b| a.price.partial_cmp(&b.price).unwrap());
 }
 
 fn add_market_data(fx_book: &mut FxBook, market_data: String) {
     // need to add return value - Result?
+    let mut vol_prices_vec: Vec<(i32, f64, String)> = Vec::new();
+
     let mut market_data_params = market_data.split("|");
     let liquidity_provider = market_data_params.next().unwrap_or("ERROR");
-    let currency_pair = market_data_params.next().unwrap_or("ERROR");
+    let _currency_pair = market_data_params.next().unwrap_or("ERROR");
 
     let one_mill_buy_price: f64 = extract_value(market_data_params.next(), "-9.9999");
+    vol_prices_vec.push((1, one_mill_buy_price, String::from("Buy")));
     let one_mill_sell_price: f64 = extract_value(market_data_params.next(), "-9.9999");
+    vol_prices_vec.push((1, one_mill_sell_price, String::from("Sell")));
     let three_mill_buy_price: f64 = extract_value(market_data_params.next(), "-9.9999");
+    vol_prices_vec.push((3, three_mill_buy_price, String::from("Buy")));
     let three_mill_sell_price: f64 = extract_value(market_data_params.next(), "-9.9999");
+    vol_prices_vec.push((3, three_mill_sell_price, String::from("Sell")));
     let five_mill_buy_price: f64 = extract_value(market_data_params.next(), "-9.9999");
+    vol_prices_vec.push((5, five_mill_buy_price, String::from("Buy")));
     let five_mill_sell_price: f64 = extract_value(market_data_params.next(), "-9.9999");
-    let timestamp: u128 = market_data_params
+    vol_prices_vec.push((5, five_mill_sell_price, String::from("Sell")));
+    let _timestamp: u128 = market_data_params
         .next()
         .unwrap_or("1751724622274219277")
         .trim()
         .parse()
         .unwrap();
 
-    add_book_entry(fx_book, liquidity_provider, 1, one_mill_buy_price, "Buy");
-    add_book_entry(fx_book, liquidity_provider, 3, three_mill_buy_price, "Buy");
-    add_book_entry(fx_book, liquidity_provider, 5, five_mill_buy_price, "Buy");
-    add_book_entry(fx_book, liquidity_provider, 1, one_mill_sell_price, "Sell");
-    add_book_entry(
-        fx_book,
-        liquidity_provider,
-        3,
-        three_mill_sell_price,
-        "Sell",
-    );
-    add_book_entry(fx_book, liquidity_provider, 5, five_mill_sell_price, "Sell");
+    let mut i = 0;
+    for val in vol_prices_vec {
+        if i % 2 == 0 {
+            match add_agg_book_entry(
+                &mut fx_book.buy_book,
+                liquidity_provider,
+                val.0,
+                val.1,
+                "Buy",
+            ) {
+                Aggregated::Added => (),
+                Aggregated::ToAdd(new_agg_book_entry) => {
+                    //  println!("ToAdd {new_agg_book_entry:?}");
+                    fx_book.buy_book.push(new_agg_book_entry);
+                }
+            }
+        } else {
+            match add_agg_book_entry(
+                &mut fx_book.sell_book,
+                liquidity_provider,
+                val.0,
+                val.1,
+                "Sell",
+            ) {
+                Aggregated::Added => (),
+                Aggregated::ToAdd(new_agg_book_entry) => {
+                    //  println!("ToAdd {new_agg_book_entry:?}");
+                    fx_book.sell_book.push(new_agg_book_entry);
+                }
+            }
+        }
+        i += 1;
+    }
 }
 
-fn add_book_entry(
-    fx_book: &mut FxBook,
+fn add_agg_book_entry(
+    fx_book_side: &mut Vec<FxAggBookEntry>,
     liquidity_provider: &str,
     volume: i32,
     price: f64,
     side: &str,
-) {
+) -> Aggregated<FxAggBookEntry> {
     // need to add return value - Result?
-    let new_book_entry = FxBookEntry {
-        liquidity_provider: String::from(liquidity_provider),
-        volume,
-        price,
-        side: String::from(side),
-    };
+    // if first entry then just add it to book
+    let mut lp_vol_vec: Vec<(String, i32)> = Vec::new();
+    lp_vol_vec.push((String::from(liquidity_provider), volume));
 
-    if side == "Buy" {
-        fx_book.buy_book.push(new_book_entry);
+    if fx_book_side.len() == 0 {
+        let new_agg_book_entry = FxAggBookEntry {
+            lp_vol: lp_vol_vec,
+            volume,
+            price,
+            side: String::from(side),
+        };
+        fx_book_side.push(new_agg_book_entry);
+        return Aggregated::Added;
     } else {
-        fx_book.sell_book.push(new_book_entry);
+        //search to see if current price already in aggregated book
+        for entry in fx_book_side {
+            if entry.price == price {
+                //  println!("price {} already present", price);
+                let lp_tup = (String::from(liquidity_provider), volume);
+                entry.lp_vol.push(lp_tup);
+                entry.volume += volume;
+                return Aggregated::Added;
+            }
+        }
+
+        // this is new entry
+        let new_agg_book_entry = FxAggBookEntry {
+            lp_vol: lp_vol_vec,
+            volume,
+            price,
+            side: String::from(side),
+        };
+        return Aggregated::ToAdd(new_agg_book_entry);
     }
 }
 
@@ -112,8 +177,8 @@ pub fn extract_value(value: Option<&str>, default_value: &str) -> f64 {
 
 pub fn new(config: &Vec<Config>) -> FxBook {
     let currency_pair = config[0].currency_pair.clone();
-    let mut buy_book: Vec<FxBookEntry> = Vec::new();
-    let mut sell_book: Vec<FxBookEntry> = Vec::new();
+    let mut buy_book: Vec<FxAggBookEntry> = Vec::new();
+    let mut sell_book: Vec<FxAggBookEntry> = Vec::new();
 
     FxBook {
         currency_pair: currency_pair,
