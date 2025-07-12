@@ -2,6 +2,8 @@ mod aggregator;
 mod simulator;
 use tokio_stream::StreamExt;
 
+use crate::aggregator::FxAggBookEntry;
+
 fn main() {
     let config = simulator::get_configs("resources/config.txt");
 
@@ -22,18 +24,18 @@ fn main() {
             // await polls the future until future returns Ready.
             // If future still pending then control is handed to the runtime
             let (key, market_data) = val;
-            println!("key: {key}, val: {market_data}");
+            //  println!("key: {key}, val: {market_data}");
 
             fx_book.update(market_data);
         }
     });
-    /*  println!("fx_book is : {fx_book:?}");
+    println!("fx_book is : {fx_book:?}");
 
-    for entry in fx_book.buy_book {
+    /*   for entry in fx_book.buy_book {
         println!("buy price is {}", entry.price);
     }
 
     for entry in fx_book.sell_book {
         println!("sell price is {}", entry.price);
-    } */
+    }  */
 }
