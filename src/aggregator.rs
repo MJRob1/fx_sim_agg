@@ -63,7 +63,7 @@ fn sort_books(fx_book: &mut FxBook) {
 
 fn add_market_data(fx_book: &mut FxBook, market_data: String) {
     // need to add return value - Result?
-    println!("market data is {market_data}");
+    // println!("market data is {market_data}");
     let mut vol_prices_vec: Vec<(i32, f64, String)> = Vec::new();
 
     let mut market_data_params = market_data.split("|");
@@ -94,14 +94,25 @@ fn add_market_data(fx_book: &mut FxBook, market_data: String) {
         //Not using returned Aggregated enum in match now
         if i % 2 == 0 {
             //remove expired quotes before adding any new quotes
-            //  check_expired_quotes(fx_book, liquidity_provider, "Buy", val.0);
+            match check_expired_quotes(fx_book, liquidity_provider, "Buy", val.0) {
+                Some(entry_to_remove) => remove_hanging_entry(fx_book, "Buy", entry_to_remove),
+                None => (),
+            }
             add_agg_book_entry(fx_book, liquidity_provider, val.0, val.1, "Buy");
         } else {
-            //  check_expired_quotes(fx_book, liquidity_provider, "Sell", val.0);
+            match check_expired_quotes(fx_book, liquidity_provider, "Sell", val.0) {
+                Some(entry_to_remove) => remove_hanging_entry(fx_book, "Sell", entry_to_remove),
+                None => (),
+            }
             add_agg_book_entry(fx_book, liquidity_provider, val.0, val.1, "Sell");
         }
         i += 1;
     }
+}
+
+fn remove_hanging_entry(fx_book: &mut FxBook, side: &str, index_to_remove: usize) {
+    let fx_book_side = get_book_side(fx_book, side);
+    fx_book_side.remove(index_to_remove);
 }
 
 fn add_agg_book_entry(
@@ -128,11 +139,6 @@ fn add_agg_book_entry(
         fx_book.buy_book.push(new_agg_book_entry);
         return Aggregated::Added;
     } else {
-        // first check to see if existing quotes have expired
-        // and remove them
-
-        // check_expired_quotes(fx_book, liquidity_provider, side, volume);
-
         let fx_book_side = get_book_side(fx_book, side);
 
         //search to see if current price already in aggregated book
@@ -166,40 +172,41 @@ fn get_book_side<'a>(fx_book: &'a mut FxBook, side: &str) -> &'a mut Vec<FxAggBo
         &mut fx_book.sell_book
     }
 }
-fn check_expired_quotes(fx_book: &mut FxBook, liquidity_provider: &str, side: &str, volume: i32) {
+fn check_expired_quotes(
+    fx_book: &mut FxBook,
+    liquidity_provider: &str,
+    side: &str,
+    volume: i32,
+) -> Option<usize> {
     let fx_book_side = get_book_side(fx_book, side);
+    let mut index = 0;
+    let mut index_to_remove: usize = 0;
+    let mut remove_entry = false;
+    let mut total_volume = 0;
     for entry in fx_book_side {
-        println!("entry is {entry:?}");
-        let lp_vol_vec = &mut entry.lp_vol;
-        println!(
-            "lp_vol_vec before retain {lp_vol_vec:?}, lp is {liquidity_provider}, and volume is {volume}."
-        );
+        total_volume = 0;
+        let lp_vol_vec: &mut Vec<(String, i32)> = &mut entry.lp_vol;
         lp_vol_vec.retain(|lp_vol| {
             ((lp_vol.0 != liquidity_provider)
                 || ((lp_vol.0 == liquidity_provider) && (lp_vol.1 != volume)))
         });
-        println!("lp_vol_vec after retain {lp_vol_vec:?}");
-        // need to re-sum the total volumes here in case an expired quote has been removed
-    }
-    /*    let mut index = 0;
-    let mut remove = false;
-    let mut remove_index = 0;
-    for lp_vol in lp_vol_vec {
-        if (lp_vol.0 == liquidity_provider) && (lp_vol.1 == volume) {
-            println!(
-                "liquidity provider {} and volume {} already present",
-                liquidity_provider, volume
-            );
-            remove = true;
-            remove_index = index;
-            println!("in loop: remove is {remove} and remove index is {remove_index}");
-            break;
+        if lp_vol_vec.len() == 0 {
+            index_to_remove = index;
+            remove_entry = true;
         }
-
+        // need to re-sum the total volumes here in case an expired quote has been removed
+        for val in lp_vol_vec {
+            total_volume += val.1;
+        }
+        entry.volume = total_volume;
         index += 1;
     }
-    println!("remove is {remove} and remove index is {remove_index}");
-    // lp_vol_vec.remove(index);  */
+
+    if remove_entry {
+        return Some(index_to_remove);
+    } else {
+        return None;
+    }
 }
 
 pub fn extract_value(value: Option<&str>, default_value: &str) -> f64 {
