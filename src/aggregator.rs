@@ -1,3 +1,5 @@
+use rand::seq::index;
+
 use crate::simulator::Config;
 use core::f64;
 use std::cmp::Ordering;
@@ -37,14 +39,12 @@ impl FxBook {
     pub fn update(&mut self, market_data: String) {
         // Need to make this fn return a result and check for that in main
         add_market_data(self, market_data);
-        //check_remove_entry(self);
-
         sort_books(self);
+        match check_books_crossed(self) {
+            Some(index) => remove_cross_sells(self, index),
+            None => (),
+        }
     }
-}
-
-fn check_remove_entry(fx_book: &mut FxBook) {
-    fx_book.buy_book.remove(0);
 }
 
 fn sort_books(fx_book: &mut FxBook) {
@@ -59,6 +59,32 @@ fn sort_books(fx_book: &mut FxBook) {
     fx_book
         .sell_book
         .sort_by(|a, b| a.price.partial_cmp(&b.price).unwrap());
+}
+
+fn check_books_crossed(fx_book: &mut FxBook) -> Option<usize> {
+    let top_of_buy_book_price = fx_book.buy_book[0].price;
+    let fx_book_sell_side = get_book_side(fx_book, "Sell");
+
+    let mut index = 0;
+    for entry in fx_book_sell_side {
+        if top_of_buy_book_price >= entry.price {
+            // if buy book top of book price >= any fx_book.sell_book price then books have crossed
+            // so find where buy price crosses on sell side and remove all sell entries <= new buy price
+            // NOTE: this strategy removes most of sell side - might want to rethink different business strategy?
+            // println!("***** Books have crossed at index {index}");
+            return Some(index);
+        }
+        index += 1;
+    }
+    return None;
+}
+
+fn remove_cross_sells(fx_book: &mut FxBook, cross_sell_index: usize) {
+    for i in (cross_sell_index..fx_book.sell_book.len() - 1).rev() {
+        // NOTE: need to put this info in log file - TODO
+        //  println!("remove_cross_sells: before remove: index is {i}");
+        fx_book.sell_book.remove(i);
+    }
 }
 
 fn add_market_data(fx_book: &mut FxBook, market_data: String) {
