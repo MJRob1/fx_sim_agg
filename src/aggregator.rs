@@ -1,8 +1,10 @@
-use rand::seq::index;
-
 use crate::simulator::Config;
+extern crate chrono;
+use chrono::Utc;
+use chrono::prelude::DateTime;
 use core::f64;
 use std::cmp::Ordering;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 enum Aggregated<T> {
     Added,
@@ -33,6 +35,7 @@ pub struct FxBook {
     pub currency_pair: String,
     pub buy_book: Vec<FxAggBookEntry>,
     pub sell_book: Vec<FxAggBookEntry>,
+    pub timestamp: u64,
 }
 
 impl FxBook {
@@ -108,12 +111,14 @@ fn add_market_data(fx_book: &mut FxBook, market_data: String) {
     vol_prices_vec.push((5, five_mill_buy_price, String::from("Buy")));
     let five_mill_sell_price: f64 = extract_value(market_data_params.next(), "-9.9999");
     vol_prices_vec.push((5, five_mill_sell_price, String::from("Sell")));
-    let _timestamp: u128 = market_data_params
+    let timestamp: u64 = market_data_params
         .next()
         .unwrap_or("1751724622274219277")
         .trim()
         .parse()
         .unwrap();
+
+    fx_book.timestamp = timestamp;
 
     let mut i = 0;
     for val in vol_prices_vec {
@@ -137,6 +142,8 @@ fn add_market_data(fx_book: &mut FxBook, market_data: String) {
 }
 
 fn remove_hanging_entry(fx_book: &mut FxBook, side: &str, index_to_remove: usize) {
+    // removing an expired quote can leave behind an fxbook entry with an empty
+    // liquidity provider and volume vector. This funtion removes this hanging entry
     let fx_book_side = get_book_side(fx_book, side);
     fx_book_side.remove(index_to_remove);
 }
@@ -192,6 +199,8 @@ fn add_agg_book_entry(
 }
 
 fn get_book_side<'a>(fx_book: &'a mut FxBook, side: &str) -> &'a mut Vec<FxAggBookEntry> {
+    // need to use lifetimes to guarantee that fxbook reference will outlive this returned new
+    // fxbook.bujy/sell_book reference
     if String::from(side) == String::from("Buy") {
         &mut fx_book.buy_book
     } else {
@@ -204,6 +213,10 @@ fn check_expired_quotes(
     side: &str,
     volume: i32,
 ) -> Option<usize> {
+    // compiler does not allow you to use fx_book.buy/sell_side as reference but
+    // does let you create this new local reference from within that reference!
+    // But need to use lifetime in get_book_side function to guarantee that fxbook
+    // reference outlives this local reference
     let fx_book_side = get_book_side(fx_book, side);
     let mut index = 0;
     let mut index_to_remove: usize = 0;
@@ -212,10 +225,14 @@ fn check_expired_quotes(
     for entry in fx_book_side {
         total_volume = 0;
         let lp_vol_vec: &mut Vec<(String, i32)> = &mut entry.lp_vol;
+        // remove expired quote
         lp_vol_vec.retain(|lp_vol| {
-            ((lp_vol.0 != liquidity_provider)
-                || ((lp_vol.0 == liquidity_provider) && (lp_vol.1 != volume)))
+            (lp_vol.0 != liquidity_provider)
+                || ((lp_vol.0 == liquidity_provider) && (lp_vol.1 != volume))
         });
+        // check to see if removing expired quote has left behind an fxbook entry with an
+        // empty liquidity provider and volume pair vector. Return index of this entry so
+        // remove_hanging_entry function can remove this entry
         if lp_vol_vec.len() == 0 {
             index_to_remove = index;
             remove_entry = true;
@@ -241,12 +258,63 @@ pub fn extract_value(value: Option<&str>, default_value: &str) -> f64 {
 
 pub fn new(config: &Vec<Config>) -> FxBook {
     let currency_pair = config[0].currency_pair.clone();
-    let mut buy_book: Vec<FxAggBookEntry> = Vec::new();
-    let mut sell_book: Vec<FxAggBookEntry> = Vec::new();
+    let buy_book: Vec<FxAggBookEntry> = Vec::new();
+    let sell_book: Vec<FxAggBookEntry> = Vec::new();
+    //need to catch this possible panic on unwrap whne converting u126 to u64
+    let timestamp: u64 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos()
+        .try_into()
+        .unwrap();
 
     FxBook {
         currency_pair: currency_pair,
         buy_book: buy_book,
         sell_book: sell_book,
+        timestamp,
+    }
+}
+
+pub fn print_fxbook_as_ladder(fx_book: &mut FxBook) {
+    let d = UNIX_EPOCH + Duration::from_nanos(fx_book.timestamp);
+    let datetime = DateTime::<Utc>::from(d);
+
+    println!(
+        "\nCurrent state of FX Book for {} at timestamp {}:\n",
+        fx_book.currency_pair,
+        datetime.format("%Y-%m-%d %H:%M:%S.%f").to_string()
+    );
+    println!("Side\t Price\t Volume\t\t (Liquidity Providers : Volumes(M))");
+    println!("===================================================================");
+    print_fxbook_side(fx_book, "Sell");
+    println!("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+    print_fxbook_side(fx_book, "Buy");
+}
+
+fn print_fxbook_side(fx_book: &mut FxBook, side: &str) {
+    let fx_book_side = get_book_side(fx_book, side);
+    for entry in fx_book_side {
+        print!("{}:\t {}\t   {}", entry.side, entry.price, entry.volume);
+        let lp_vol_vec: &mut Vec<(String, i32)> = &mut entry.lp_vol;
+        let len = lp_vol_vec.len() - 1;
+        let mut index = 0;
+        for val in lp_vol_vec {
+            if index == 0 && len == 0 {
+                let lp_vol = format!("\t\t ({}: {})", val.0, val.1);
+                print!("{}", lp_vol);
+            } else if index == 0 {
+                let lp_vol = format!("\t\t ({}: {},", val.0, val.1);
+                print!("{}", lp_vol);
+            } else if index == len {
+                let lp_vol = format!(" {}: {})", val.0, val.1);
+                print!("{}", lp_vol);
+            } else {
+                let lp_vol = format!(" {}: {},", val.0, val.1);
+                print!("{}", lp_vol);
+            }
+            index += 1;
+        }
+        print!("\n");
     }
 }

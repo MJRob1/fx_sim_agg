@@ -81,7 +81,7 @@ pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
         // async returns a future rather than blocking current thread
         // move is required to move tx into the async block so it gets ownership and
         // tx closes after last message is sent
-        for number in 1..4 {
+        for _number in 1..4 {
             let random_sleep = rand::random_range(1000..5000);
             //   println!("random sleep is {random_sleep}");
             // await polls the future until future returns Ready.
