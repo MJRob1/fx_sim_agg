@@ -13,12 +13,14 @@ pub struct Config {
     pub spread: f64,
     pub three_mill_markup: f64,
     pub five_mill_markup: f64,
+    pub run_iterations: i32,
 }
 
 pub fn get_configs(filepath: &str) -> Vec<Config> {
     let parameters = read_config_file(filepath);
     let mut config_vector: Vec<Config> = Vec::new();
     let mut index = 0;
+    let mut iterations = 10;
     for i in &parameters {
         // println!("{i}");
         // ignore header line in config file
@@ -30,6 +32,7 @@ pub fn get_configs(filepath: &str) -> Vec<Config> {
             let spread = convert_pips(fx_params.next().unwrap_or("6"));
             let three_mill_markup = convert_pips(fx_params.next().unwrap_or(".25"));
             let five_mill_markup = convert_pips(fx_params.next().unwrap_or(".5"));
+            let run_iterations: i32 = fx_params.next().unwrap_or("10").trim().parse().unwrap();
             let config = Config {
                 liquidity_provider: String::from(liquidity_provider),
                 currency_pair: String::from(currency_pair),
@@ -37,8 +40,10 @@ pub fn get_configs(filepath: &str) -> Vec<Config> {
                 spread,
                 three_mill_markup,
                 five_mill_markup,
+                run_iterations,
             };
-            // println!("Config is : {config:?}");
+            //println!("Config is : {config:?}");
+
             config_vector.push(config);
         }
         index += 1;
@@ -73,6 +78,7 @@ pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
     let spread = config.spread;
     let three_mill_markup = config.three_mill_markup;
     let five_mill_markup = config.five_mill_markup;
+    let number_iterations = config.run_iterations + 1;
     let liquidity_provider = config.liquidity_provider.clone();
     let currency_pair = config.currency_pair.clone();
 
@@ -81,7 +87,7 @@ pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
         // async returns a future rather than blocking current thread
         // move is required to move tx into the async block so it gets ownership and
         // tx closes after last message is sent
-        for _number in 1..4 {
+        for _number in 1..number_iterations {
             let random_sleep = rand::random_range(1000..5000);
             //   println!("random sleep is {random_sleep}");
             // await polls the future until future returns Ready.
@@ -123,7 +129,7 @@ pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
                 timestamp
             );
 
-            // println!("before send: {marketdata}");
+            //println!("before send: {marketdata}");
 
             if let Err(send_error) = tx.send(format!("{marketdata}")) {
                 //note format must expand to borrow marketdata and hence you can use it again in the eprintln below

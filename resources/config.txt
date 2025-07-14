@@ -1,6 +1,6 @@
-Liquidity provider, currency pair, 1M buy price, spread (pips), 3M markup (pips), 5M markip (pips)
-CITI, USD/EUR, 1.5552, 9, .25, .5
-BARX, USD/EUR, 1.5553, 9, .25, .5
-MS, USD/EUR, 1.5554, 10, .25, .5
-JPMC, USD/EUR, 1.5553, 10, .25, .5
-UBS, USD/EUR, 1.5552, 10, .25, .5
+Name, currency pair, 1M buy price, spread (pips), 3M markup (pips), 5M markip (pips), no. iterations
+CITI, USD/EUR, 1.5552, 14, .25, .5, 4
+BARX, USD/EUR, 1.5553, 14, .25, .5, 4
+MS, USD/EUR, 1.5554, 15, .25, .5, 4
+JPMC, USD/EUR, 1.5553, 15, .25, .5, 4
+UBS, USD/EUR, 1.5552, 15, .25, .5, 4
