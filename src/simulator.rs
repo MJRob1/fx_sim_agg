@@ -1,5 +1,4 @@
 use core::f64;
-use rand::Rng;
 use std::fs;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::{spawn, sync::mpsc::unbounded_channel, time::sleep};
@@ -20,9 +19,7 @@ pub fn get_configs(filepath: &str) -> Vec<Config> {
     let parameters = read_config_file(filepath);
     let mut config_vector: Vec<Config> = Vec::new();
     let mut index = 0;
-    let mut iterations = 10;
     for i in &parameters {
-        // println!("{i}");
         // ignore header line in config file
         if index > 0 {
             let mut fx_params = i.split(",");
@@ -96,12 +93,17 @@ pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
             // now future has returned ready state and so code below is now executed
 
             // randomly determine whether this is a price rise or fall
-            let pip_change: f64 = rand::random_range(1.0..5.0) / 10000.0;
-            if rand::rng().random_bool(0.5) {
+            // let pip_change: f64 = rand::random_range(1.0..5.0) / 10000.0;
+            let pip_change: f64 = rand::random_range(0.0..2.0) / 10000.0;
+
+            /*   if rand::rng().random_bool(0.5) {
                 buy_price = ((buy_price + pip_change) * 10000.0).round() / 10000.0; // Need to change for USD/JPY
             } else {
                 buy_price = ((buy_price - pip_change) * 10000.0).round() / 10000.0; // Need to change for USD/JPY
-            };
+            };  */
+
+            // let's say it is a bull market and prices are trending up
+            buy_price = ((buy_price + pip_change) * 10000.0).round() / 10000.0;
 
             let sell_price = ((buy_price + spread) * 10000.0).round() / 10000.0;
             let three_mill_buy_price =

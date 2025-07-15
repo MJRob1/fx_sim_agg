@@ -4,8 +4,8 @@ use tokio_stream::StreamExt;
 
 fn main() {
     let config = simulator::get_configs("resources/config.txt");
-
     let mut fx_book = aggregator::new(&config);
+    let mut writer = fx_sim_agg::create_log_file("logs/fix.log");
 
     fx_sim_agg::run(async {
         /*  async returns a future rather than blocking current thread
@@ -20,9 +20,9 @@ fn main() {
         while let Some(val) = merged_streams_map.next().await {
             // await polls the future until future returns Ready.
             // If future still pending then control is handed to the runtime
-            let (key, market_data) = val;
-            //need to write this market data to a FIX log
+            let (_key, market_data) = val;
             //println!("key: {key}, val: {market_data}");
+            fx_sim_agg::write_to_fix_log(&mut writer, &market_data);
 
             // Update the Fx Book with the new market data
             fx_book.update(market_data);
