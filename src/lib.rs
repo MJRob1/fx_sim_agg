@@ -23,8 +23,7 @@ pub fn create_log_file(filepath: &str) -> BufWriter<File> {
 }
 
 pub fn write_to_fix_log(writer: &mut BufWriter<File>, market_data: &String) {
-    match writeln!(writer, "{}", market_data) {
-        Ok(_file) => (),
-        Err(error) => eprintln!("Problem writing to log file, {}", error),
+    if let Err(error) = writeln!(writer, "{}", market_data) {
+        eprintln!("Problem writing to log file, {}", error);
     }
 }

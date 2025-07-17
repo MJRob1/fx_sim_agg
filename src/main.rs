@@ -21,11 +21,13 @@ fn main() {
             // await polls the future until future returns Ready.
             // If future still pending then control is handed to the runtime
             let (_key, market_data) = val;
-            //println!("key: {key}, val: {market_data}");
+
+            // write market data to a "FIX" log
             fx_sim_agg::write_to_fix_log(&mut writer, &market_data);
 
             // Update the Fx Book with the new market data
             fx_book.update(market_data);
+
             // currently working on real-time GUI rather than print!!
             aggregator::print_fxbook_as_ladder(&mut fx_book);
         }
