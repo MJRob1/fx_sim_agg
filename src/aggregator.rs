@@ -3,6 +3,7 @@ extern crate chrono;
 use chrono::Utc;
 use chrono::prelude::DateTime;
 use core::f64;
+use log::{debug, error, info, trace, warn};
 use std::cmp::Ordering;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -36,29 +37,19 @@ pub struct FxBook {
 
 impl FxBook {
     pub fn update(&mut self, market_data: String) {
+        // couunt initial entries to make sure book has had time to fill before making any corrections
         if self.num_updates < 30 {
-            // only need to couunt initial entries to make sure book has had
-            //time to fill
             self.num_updates += 1;
         }
         // add fxbook entries for all current market data in the order of
         // 1M buy, 1M sell, 3M buy, 3M sell, 5M buy, 5M sell
         add_market_data(self, market_data);
         sort_books(self);
-        //  if self.num_updates > 10 {
-        // allow some initial updates to build book
-        //     balance_book(self);
-        // }
-        //  match check_side_price_ranges(self) {
-        //      Some(index) => println!(
-        //          "********************price range > 10 pips at index {}",
-        //          index
-        //      ),
-        //      None => (),
-        //  }
         match check_books_crossed(self) {
-            // Some(index) => remove_range_entries_from_bottom(self, index, "Buy"),
-            Some(index) => remove_range_entries_from_top(self, index, "Sell"),
+            Some(index) => {
+                info!("Books crossed at index {}", index);
+                remove_range_entries_from_top(self, index, "Sell")
+            }
             None => (),
         }
         maintain_min_spread(self);
@@ -71,9 +62,11 @@ fn maintain_min_spread(fx_book: &mut FxBook) {
 
     // if spread less than 6 pips then remove top of buy
     if fx_book.sell_book[0].price - fx_book.buy_book[0].price <= 0.0006 {
+        info!("Removing top of buy book to maintain spread");
         remove_single_entry(fx_book, "Buy", 0);
         // if still less than 6 pips then remove top of sell
         if fx_book.sell_book[0].price - fx_book.buy_book[0].price <= 0.0006 {
+            info!("Removing top of sell book to maintain spread");
             remove_single_entry(fx_book, "Sell", 0)
         }
     }
@@ -95,89 +88,11 @@ fn check_books_crossed(fx_book: &mut FxBook) -> Option<usize> {
 
 fn remove_range_entries_from_top(fx_book: &mut FxBook, index: usize, side: &str) {
     let fx_book_side = get_book_side(fx_book, side);
-    for i in 0..index + 1 {
+    for _i in 0..index + 1 {
         // NOTE: need to put this info in log file - TODO
         // because of removal of [0] entry then entry to remove is always the top one [0]
         fx_book_side.remove(0);
     }
-}
-
-fn remove_range_entries_from_bottom(fx_book: &mut FxBook, start_index: usize, side: &str) {
-    let fx_book_side = get_book_side(fx_book, side);
-    if start_index == 0 {
-        // this would be removing entire book!
-        eprintln!("remove_range_entries_from_bottom: start index should not be zero");
-        // remove top of other side book instead
-        if side == "Sell" {
-            remove_range_entries_from_top(fx_book, start_index, "Buy");
-        } else {
-            remove_range_entries_from_top(fx_book, start_index, "Sell");
-        }
-        return;
-    }
-
-    for i in (start_index..fx_book_side.len()).rev() {
-        // NOTE: need to put this info in log file - TODO
-        println!("remove_range_entries: before remove: index is {i}");
-        fx_book_side.remove(i);
-    }
-}
-
-fn balance_book(fx_book: &mut FxBook) {
-    // make book balanced - that is equal number of buys and sells
-    println!(
-        "Need to balance book, no_of updates is {}",
-        fx_book.num_updates
-    );
-    // find if one side longer (by +-1)
-
-    if fx_book.buy_book.len() > fx_book.sell_book.len() {
-        if fx_book.buy_book.len() - fx_book.sell_book.len() > 1 {
-            println!(" ============= buy side longer");
-            let difference = fx_book.buy_book.len() - fx_book.sell_book.len();
-            remove_range_entries_from_bottom(
-                fx_book,
-                fx_book.buy_book.len() - difference - 1,
-                "Buy",
-            );
-        }
-    } else if fx_book.sell_book.len() > fx_book.buy_book.len() {
-        if fx_book.sell_book.len() - fx_book.buy_book.len() > 1 {
-            println!(" ============= sell side longer");
-        }
-    }
-}
-
-fn check_side_price_ranges(fx_book: &mut FxBook) -> Option<usize> {
-    let top_of_buy_book_price = fx_book.buy_book[0].price;
-    let bottom_of_buy_book_price = fx_book.buy_book[fx_book.buy_book.len() - 1].price;
-    println!(
-        "\n\ntop of book {}, bottom of book {}, difference is {}",
-        top_of_buy_book_price,
-        bottom_of_buy_book_price,
-        top_of_buy_book_price - bottom_of_buy_book_price
-    );
-
-    // check not more than 10 pips difference between top and bottom of book
-    if top_of_buy_book_price - bottom_of_buy_book_price > 0.001 {
-        // find where book price is > 10 pip difference
-        let fx_book_buy_side = get_book_side(fx_book, "Buy");
-        let mut index = 0;
-        for entry in fx_book_buy_side {
-            println!(
-                "************* top of book price {}, entry[{}] price {} - difference is {}",
-                top_of_buy_book_price,
-                index,
-                entry.price,
-                top_of_buy_book_price - entry.price
-            );
-            if top_of_buy_book_price - entry.price > 0.001 {
-                return Some(index);
-            }
-            index += 1;
-        }
-    }
-    return None;
 }
 
 fn sort_books(fx_book: &mut FxBook) {
@@ -195,7 +110,6 @@ fn sort_books(fx_book: &mut FxBook) {
 }
 
 fn add_market_data(fx_book: &mut FxBook, market_data: String) {
-    // println!("market data is {market_data}");
     let mut vol_prices_vec: Vec<(i32, f64, String)> = Vec::new();
 
     let mut market_data_params = market_data.split("|");
@@ -246,6 +160,7 @@ fn add_market_data(fx_book: &mut FxBook, market_data: String) {
 fn remove_single_entry(fx_book: &mut FxBook, side: &str, index_to_remove: usize) {
     // removing an expired quote can leave behind an fxbook entry with an empty
     // liquidity provider and volume vector. This funtion removes this hanging entry
+
     let fx_book_side = get_book_side(fx_book, side);
     fx_book_side.remove(index_to_remove);
 }
@@ -333,7 +248,7 @@ fn check_expired_quotes(
         });
         // check to see if removing expired quote has left behind an fxbook entry with an
         // empty liquidity provider and volume pair vector. Return index of this entry so
-        // remove_hanging_entry function can remove this entry
+        // remove_single_entry function can remove this entry
         if lp_vol_vec.len() == 0 {
             index_to_remove = index;
             remove_entry = true;
@@ -388,7 +303,7 @@ pub fn print_fxbook_as_ladder(fx_book: &mut FxBook) {
         fx_book.currency_pair,
         datetime.format("%Y-%m-%d %H:%M:%S.%f").to_string()
     );
-    println!("Side\t Price\t Volume\t\t (Liquidity Providers : Volumes(M))");
+    println!("Side\t Price\t Volume(M)\t\t (Liquidity Providers : Volumes(M))");
     println!("===================================================================");
     print_sell_side(fx_book);
     println!("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");

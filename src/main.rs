@@ -1,8 +1,12 @@
 mod aggregator;
 mod simulator;
+use log::{debug, error, info, trace, warn};
+use log4rs;
 use tokio_stream::StreamExt;
 
 fn main() {
+    log4rs::init_file("logging_config.yaml", Default::default()).unwrap();
+
     let config = simulator::get_configs("resources/config.txt");
     let mut fx_book = aggregator::new(&config);
     let mut writer = fx_sim_agg::create_log_file("logs/fix.log");
