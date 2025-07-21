@@ -1,5 +1,6 @@
 use core::f64;
-use log::{debug, error, info, trace, warn};
+//use log::{debug, error, info, trace, warn};
+use log::error;
 use std::fs;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::{spawn, sync::mpsc::unbounded_channel, time::sleep};
@@ -126,8 +127,7 @@ pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
             );
 
             if let Err(send_error) = tx.send(format!("{marketdata}")) {
-                //note format must expand to borrow marketdata and hence you can use it again in the eprintln below
-                error!("Could not send message {marketdata}: {send_error}");
+                error!("could not send message {marketdata}: {send_error}");
                 break;
             };
         }

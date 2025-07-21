@@ -3,10 +3,49 @@ extern crate chrono;
 use chrono::Utc;
 use chrono::prelude::DateTime;
 use core::f64;
-use log::{debug, error, info, trace, warn};
+//use log::{debug, error, info, trace, warn};
+use log::{error, info};
 use std::cmp::Ordering;
+use std::fmt;
+use std::fmt::Display;
+use std::fmt::Formatter;
+use std::num::ParseFloatError;
+use std::num::ParseIntError;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum AggError {
+    NumPrarams,
+    IsEmpty,
+    ParseFloat(ParseFloatError),
+    ParseInt(ParseIntError),
+}
+
+impl From<ParseFloatError> for AggError {
+    fn from(error: ParseFloatError) -> Self {
+        Self::ParseFloat(error)
+    }
+}
+
+impl From<ParseIntError> for AggError {
+    fn from(error: ParseIntError) -> Self {
+        Self::ParseInt(error)
+    }
+}
+
+impl Display for AggError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::IsEmpty => f.write_str("empty market data field"),
+            Self::NumPrarams => f.write_str("missing market data fields"),
+            Self::ParseFloat(e) => Display::fmt(e, f),
+            Self::ParseInt(e) => Display::fmt(e, f),
+        }
+    }
+}
+
+impl std::error::Error for AggError {}
 #[derive(Debug)]
 pub struct FxAggBookEntry {
     pub lp_vol: Vec<(String, i32)>,
@@ -32,108 +71,45 @@ pub struct FxBook {
     pub buy_book: Vec<FxAggBookEntry>,
     pub sell_book: Vec<FxAggBookEntry>,
     pub timestamp: u64,
-    pub num_updates: i32,
 }
 
 impl FxBook {
-    pub fn update(&mut self, market_data: String) {
-        // couunt initial entries to make sure book has had time to fill before making any corrections
-        if self.num_updates < 30 {
-            self.num_updates += 1;
-        }
+    pub fn update(&mut self, market_data: String) -> Result<(), AggError> {
         // add fxbook entries for all current market data in the order of
         // 1M buy, 1M sell, 3M buy, 3M sell, 5M buy, 5M sell
-        add_market_data(self, market_data);
+        add_market_data(self, market_data)?;
         sort_books(self);
         match check_books_crossed(self) {
             Some(index) => {
-                info!("Books crossed at index {}", index);
+                info!("books crossed at index {}", index);
                 remove_range_entries_from_top(self, index, "Sell")
             }
             None => (),
         }
         maintain_min_spread(self);
+        Ok(())
     }
 }
 
-fn maintain_min_spread(fx_book: &mut FxBook) {
-    // if spread is less than 6 pips (arbitrary) then delete top of book entries
-    // until get this minimum spread
-
-    // if spread less than 6 pips then remove top of buy
-    if fx_book.sell_book[0].price - fx_book.buy_book[0].price <= 0.0006 {
-        info!("Removing top of buy book to maintain spread");
-        remove_single_entry(fx_book, "Buy", 0);
-        // if still less than 6 pips then remove top of sell
-        if fx_book.sell_book[0].price - fx_book.buy_book[0].price <= 0.0006 {
-            info!("Removing top of sell book to maintain spread");
-            remove_single_entry(fx_book, "Sell", 0)
-        }
-    }
-}
-
-fn check_books_crossed(fx_book: &mut FxBook) -> Option<usize> {
-    let top_of_buy_book_price = fx_book.buy_book[0].price;
-    let fx_book_side = get_book_side(fx_book, "Sell");
-
-    // if buy book top of book price >= any fx_book.sell_book price then books have crossed
-    // so find where buy price crosses on sell side and remove all sell entries <= new buy price
-    for i in (0..fx_book_side.len()).rev() {
-        if top_of_buy_book_price >= fx_book_side[i].price {
-            return Some(i);
-        }
-    }
-    return None;
-}
-
-fn remove_range_entries_from_top(fx_book: &mut FxBook, index: usize, side: &str) {
-    let fx_book_side = get_book_side(fx_book, side);
-    for _i in 0..index + 1 {
-        // NOTE: need to put this info in log file - TODO
-        // because of removal of [0] entry then entry to remove is always the top one [0]
-        fx_book_side.remove(0);
-    }
-}
-
-fn sort_books(fx_book: &mut FxBook) {
-    fx_book
-        .buy_book
-        .sort_by(|a, b| match a.price.partial_cmp(&b.price).unwrap() {
-            Ordering::Less => Ordering::Greater,
-            Ordering::Equal => Ordering::Equal,
-            Ordering::Greater => Ordering::Less,
-        });
-
-    fx_book
-        .sell_book
-        .sort_by(|a, b| a.price.partial_cmp(&b.price).unwrap());
-}
-
-fn add_market_data(fx_book: &mut FxBook, market_data: String) {
+fn add_market_data(fx_book: &mut FxBook, market_data: String) -> Result<(), AggError> {
     let mut vol_prices_vec: Vec<(i32, f64, String)> = Vec::new();
 
-    let mut market_data_params = market_data.split("|");
-    let liquidity_provider = market_data_params.next().unwrap_or("ERROR");
-    let _currency_pair = market_data_params.next().unwrap_or("ERROR");
-
-    let one_mill_buy_price: f64 = extract_value(market_data_params.next(), "-9.9999");
+    let mut market_data_params = get_market_data_params(&market_data)?;
+    let liquidity_provider = get_str_field(market_data_params.next())?;
+    let _currency_pair = get_str_field(market_data_params.next())?;
+    let one_mill_buy_price: f64 = market_data_params.next().unwrap_or("").trim().parse()?;
     vol_prices_vec.push((1, one_mill_buy_price, String::from("Buy")));
-    let one_mill_sell_price: f64 = extract_value(market_data_params.next(), "-9.9999");
+    let one_mill_sell_price: f64 = market_data_params.next().unwrap_or("").trim().parse()?;
     vol_prices_vec.push((1, one_mill_sell_price, String::from("Sell")));
-    let three_mill_buy_price: f64 = extract_value(market_data_params.next(), "-9.9999");
+    let three_mill_buy_price: f64 = market_data_params.next().unwrap_or("").trim().parse()?;
     vol_prices_vec.push((3, three_mill_buy_price, String::from("Buy")));
-    let three_mill_sell_price: f64 = extract_value(market_data_params.next(), "-9.9999");
+    let three_mill_sell_price: f64 = market_data_params.next().unwrap_or("").trim().parse()?;
     vol_prices_vec.push((3, three_mill_sell_price, String::from("Sell")));
-    let five_mill_buy_price: f64 = extract_value(market_data_params.next(), "-9.9999");
+    let five_mill_buy_price: f64 = market_data_params.next().unwrap_or("").trim().parse()?;
     vol_prices_vec.push((5, five_mill_buy_price, String::from("Buy")));
-    let five_mill_sell_price: f64 = extract_value(market_data_params.next(), "-9.9999");
+    let five_mill_sell_price: f64 = market_data_params.next().unwrap_or("").trim().parse()?;
     vol_prices_vec.push((5, five_mill_sell_price, String::from("Sell")));
-    let timestamp: u64 = market_data_params
-        .next()
-        .unwrap_or("1751724622274219277")
-        .trim()
-        .parse()
-        .unwrap();
+    let timestamp: u64 = market_data_params.next().unwrap_or("").trim().parse()?;
 
     fx_book.timestamp = timestamp;
 
@@ -155,74 +131,28 @@ fn add_market_data(fx_book: &mut FxBook, market_data: String) {
         }
         i += 1;
     }
+
+    Ok(())
 }
 
-fn remove_single_entry(fx_book: &mut FxBook, side: &str, index_to_remove: usize) {
-    // removing an expired quote can leave behind an fxbook entry with an empty
-    // liquidity provider and volume vector. This funtion removes this hanging entry
-
-    let fx_book_side = get_book_side(fx_book, side);
-    fx_book_side.remove(index_to_remove);
-}
-
-fn add_agg_book_entry(
-    fx_book: &mut FxBook,
-    liquidity_provider: &str,
-    volume: i32,
-    price: f64,
-    side: &str,
-) {
-    // not using return Aggregated now so change return value
-
-    let mut lp_vol_vec: Vec<(String, i32)> = Vec::new();
-    lp_vol_vec.push((String::from(liquidity_provider), volume));
-
-    // if first entry then just add it to book
-    // and using fact that first entry is always a Buy in current config
-    if fx_book.buy_book.len() == 0 {
-        let new_agg_book_entry = FxAggBookEntry {
-            lp_vol: lp_vol_vec,
-            volume,
-            price,
-            side: String::from(side),
-        };
-        fx_book.buy_book.push(new_agg_book_entry);
-        return;
+fn get_market_data_params(data: &str) -> Result<std::str::Split<'_, &str>, AggError> {
+    let value = data.split("|");
+    if value.clone().count() < 9 {
+        return Err(AggError::NumPrarams);
     } else {
-        let fx_book_side = get_book_side(fx_book, side);
-
-        //search to see if current price already in aggregated book
-        for entry in fx_book_side {
-            if entry.price == price {
-                let lp_tup = (String::from(liquidity_provider), volume);
-                entry.lp_vol.push(lp_tup);
-                entry.volume += volume;
-                return;
-            }
-        }
-
-        // this is new entry
-        let new_agg_book_entry = FxAggBookEntry {
-            lp_vol: lp_vol_vec,
-            volume,
-            price,
-            side: String::from(side),
-        };
-        let fx_book_side = get_book_side(fx_book, side);
-        fx_book_side.push(new_agg_book_entry);
-        return;
+        Ok(data.split("|"))
     }
 }
 
-fn get_book_side<'a>(fx_book: &'a mut FxBook, side: &str) -> &'a mut Vec<FxAggBookEntry> {
-    // need to use lifetimes to guarantee that fxbook reference will outlive this returned new
-    // fxbook.buy/sell_book reference
-    if String::from(side) == String::from("Buy") {
-        &mut fx_book.buy_book
+fn get_str_field(field: Option<&str>) -> Result<&str, AggError> {
+    let value = field.unwrap_or("");
+    if value.trim().is_empty() {
+        return Err(AggError::IsEmpty);
     } else {
-        &mut fx_book.sell_book
+        Ok(value)
     }
 }
+
 fn check_expired_quotes(
     fx_book: &mut FxBook,
     liquidity_provider: &str,
@@ -268,8 +198,125 @@ fn check_expired_quotes(
     }
 }
 
-pub fn extract_value(value: Option<&str>, default_value: &str) -> f64 {
-    value.unwrap_or(default_value).trim().parse().unwrap()
+fn add_agg_book_entry(
+    fx_book: &mut FxBook,
+    liquidity_provider: &str,
+    volume: i32,
+    price: f64,
+    side: &str,
+) {
+    let mut lp_vol_vec: Vec<(String, i32)> = Vec::new();
+    lp_vol_vec.push((String::from(liquidity_provider), volume));
+
+    // if first entry then just add it to book
+    // and using fact that first entry is always a Buy in current config
+    if fx_book.buy_book.len() == 0 && side == "Buy" {
+        let new_agg_book_entry = FxAggBookEntry {
+            lp_vol: lp_vol_vec,
+            volume,
+            price,
+            side: String::from(side),
+        };
+        fx_book.buy_book.push(new_agg_book_entry);
+        return;
+    } else if fx_book.buy_book.len() == 0 && fx_book.sell_book.len() == 0 {
+        error!("first entry should not be on sell side in current configuration");
+        return;
+    } else {
+        let fx_book_side = get_book_side(fx_book, side);
+
+        //search to see if current price already in aggregated book
+        for entry in fx_book_side {
+            if entry.price == price {
+                let lp_tup = (String::from(liquidity_provider), volume);
+                entry.lp_vol.push(lp_tup);
+                entry.volume += volume;
+                return;
+            }
+        }
+
+        // this is new entry
+        let new_agg_book_entry = FxAggBookEntry {
+            lp_vol: lp_vol_vec,
+            volume,
+            price,
+            side: String::from(side),
+        };
+        let fx_book_side = get_book_side(fx_book, side);
+        fx_book_side.push(new_agg_book_entry);
+        return;
+    }
+}
+
+fn sort_books(fx_book: &mut FxBook) {
+    fx_book
+        .buy_book
+        .sort_by(|a, b| match a.price.partial_cmp(&b.price).unwrap() {
+            Ordering::Less => Ordering::Greater,
+            Ordering::Equal => Ordering::Equal,
+            Ordering::Greater => Ordering::Less,
+        });
+
+    fx_book
+        .sell_book
+        .sort_by(|a, b| a.price.partial_cmp(&b.price).unwrap());
+}
+
+fn check_books_crossed(fx_book: &mut FxBook) -> Option<usize> {
+    let top_of_buy_book_price = fx_book.buy_book[0].price;
+    let fx_book_side = get_book_side(fx_book, "Sell");
+
+    // if buy book top of book price >= any fx_book.sell_book price then books have crossed
+    // so find where buy price crosses on sell side and remove all sell entries <= new buy price
+    for i in (0..fx_book_side.len()).rev() {
+        if top_of_buy_book_price >= fx_book_side[i].price {
+            return Some(i);
+        }
+    }
+    return None;
+}
+
+fn maintain_min_spread(fx_book: &mut FxBook) {
+    // if spread is less than 6 pips (arbitrary) then delete top of book entries
+    // until get this minimum spread
+
+    while fx_book.sell_book[0].price - fx_book.buy_book[0].price <= 0.0006 {
+        if fx_book.buy_book.len() >= fx_book.sell_book.len() {
+            // remove top entry from buy side
+            info!("removing top of buy book to maintain spread");
+            remove_single_entry(fx_book, "Buy", 0);
+        } else {
+            info!("removing top of sell book to maintain spread");
+            remove_single_entry(fx_book, "Sell", 0)
+        }
+    }
+}
+
+fn remove_range_entries_from_top(fx_book: &mut FxBook, index: usize, side: &str) {
+    let fx_book_side = get_book_side(fx_book, side);
+    for i in 0..index + 1 {
+        // because of removal of [0] entry then entry to remove is always the top one [0]
+        fx_book_side.remove(0);
+        info!("removing entry {} from sell book", i);
+    }
+}
+
+fn remove_single_entry(fx_book: &mut FxBook, side: &str, index_to_remove: usize) {
+    // removing an expired quote can leave behind an fxbook entry with an empty
+    // liquidity provider and volume vector. This funtion removes this hanging entry
+
+    let fx_book_side = get_book_side(fx_book, side);
+    fx_book_side.remove(index_to_remove);
+}
+
+fn get_book_side<'a>(fx_book: &'a mut FxBook, side: &str) -> &'a mut Vec<FxAggBookEntry> {
+    // need to use lifetimes to guarantee that fxbook reference will outlive this returned new
+    // fxbook.buy/sell_book reference
+    if String::from(side) == String::from("Buy") {
+        &mut fx_book.buy_book
+    } else {
+        &mut fx_book.sell_book
+    }
 }
 
 pub fn new(config: &Vec<Config>) -> FxBook {
@@ -283,14 +330,12 @@ pub fn new(config: &Vec<Config>) -> FxBook {
         .as_nanos()
         .try_into()
         .unwrap();
-    let num_updates = 0;
 
     FxBook {
-        currency_pair: currency_pair,
-        buy_book: buy_book,
-        sell_book: sell_book,
+        currency_pair,
+        buy_book,
+        sell_book,
         timestamp,
-        num_updates,
     }
 }
 

@@ -1,6 +1,7 @@
 mod aggregator;
 mod simulator;
-use log::{debug, error, info, trace, warn};
+//use log::{debug, error, info, trace, warn};
+use log::error;
 use log4rs;
 use tokio_stream::StreamExt;
 
@@ -30,10 +31,12 @@ fn main() {
             fx_sim_agg::write_to_fix_log(&mut writer, &market_data);
 
             // Update the Fx Book with the new market data
-            fx_book.update(market_data);
-
-            // currently working on real-time GUI rather than print!!
-            aggregator::print_fxbook_as_ladder(&mut fx_book);
+            if let Err(e) = fx_book.update(market_data) {
+                error!("market data not processed - {e}");
+            } else {
+                // currently working on real-time GUI rather than print!!
+                aggregator::print_fxbook_as_ladder(&mut fx_book);
+            }
         }
     });
 }
