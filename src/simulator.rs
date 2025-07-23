@@ -2,6 +2,7 @@ use core::f64;
 //use log::{debug, error, info, trace, warn};
 use log::error;
 use std::fs;
+use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::{spawn, sync::mpsc::unbounded_channel, time::sleep};
 use tokio_stream::{Stream, StreamMap, wrappers::UnboundedReceiverStream};
@@ -17,21 +18,25 @@ pub struct Config {
     pub run_iterations: i32,
 }
 
-pub fn get_configs(filepath: &str) -> Vec<Config> {
-    let parameters = read_config_file(filepath);
-    let mut config_vector: Vec<Config> = Vec::new();
+pub fn get_configs(configs: &mut Vec<Config>) -> Result<(), fx_sim_agg::AppError> {
+    let parameters = read_config_file("resources/config.txt")?;
     let mut index = 0;
     for i in &parameters {
         // ignore header line in config file
         if index > 0 {
             let mut fx_params = i.split(",");
-            let liquidity_provider = fx_params.next().unwrap_or("CITI");
-            let currency_pair = fx_params.next().unwrap_or("USD/EUR");
-            let buy_price = fx_params.next().unwrap_or("1.5552").trim().parse().unwrap();
-            let spread = convert_pips(fx_params.next().unwrap_or("6"));
-            let three_mill_markup = convert_pips(fx_params.next().unwrap_or(".25"));
-            let five_mill_markup = convert_pips(fx_params.next().unwrap_or(".5"));
-            let run_iterations: i32 = fx_params.next().unwrap_or("10").trim().parse().unwrap();
+            // let mut fx_params = fx_sim_agg::get_params(i, 7)?;
+            let liquidity_provider = fx_sim_agg::get_str_field(fx_params.next())?;
+            let currency_pair = fx_sim_agg::get_str_field(fx_params.next())?;
+            let buy_price: f64 = fx_params.next().unwrap_or("").trim().parse()?;
+            let mut spread: f64 = fx_params.next().unwrap_or("").trim().parse()?;
+            spread = spread / 10000.0;
+            let mut three_mill_markup: f64 = fx_params.next().unwrap_or("").trim().parse()?;
+            three_mill_markup = three_mill_markup / 10000.0;
+            let mut five_mill_markup: f64 = fx_params.next().unwrap_or("").trim().parse()?;
+            five_mill_markup = five_mill_markup / 10000.0;
+            let run_iterations: i32 = fx_params.next().unwrap_or("").trim().parse()?;
+
             let config = Config {
                 liquidity_provider: String::from(liquidity_provider),
                 currency_pair: String::from(currency_pair),
@@ -42,25 +47,18 @@ pub fn get_configs(filepath: &str) -> Vec<Config> {
                 run_iterations,
             };
 
-            config_vector.push(config);
+            configs.push(config);
         }
         index += 1;
     }
 
-    config_vector
+    Ok(())
 }
 
-fn convert_pips(value: &str) -> f64 {
-    let value_fp: f64 = value.trim().parse().unwrap();
-    value_fp / 10000.0
-}
-
-fn read_config_file(filename: &str) -> Vec<String> {
-    fs::read_to_string(filename)
-        .expect("problem reading initial config file")
-        .lines() // split the string into an iterator of string slices
-        .map(String::from) // make each slice into a string
-        .collect() // gather them together into a vector
+fn read_config_file<P: AsRef<Path>>(file_path: P) -> Result<Vec<String>, fx_sim_agg::AppError> {
+    let contents: String = fs::read_to_string(file_path)?;
+    let results = contents.lines().map(String::from).collect();
+    Ok(results)
 }
 
 pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {

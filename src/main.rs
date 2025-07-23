@@ -1,15 +1,30 @@
 mod aggregator;
 mod simulator;
+use std::process::exit;
+
 //use log::{debug, error, info, trace, warn};
 use log::error;
 use log4rs;
 use tokio_stream::StreamExt;
 
 fn main() {
-    log4rs::init_file("logging_config.yaml", Default::default()).unwrap();
+    // start log4rs logging framework
+    if let Err(e) = log4rs::init_file("logging_config.yaml", Default::default()) {
+        eprintln!("error initialising log4rs - {e}");
+        exit(1);
+    }
 
-    let config = simulator::get_configs("resources/config.txt");
-    let mut fx_book = aggregator::new(&config);
+    // read config file to get configs for each liquidity provider source
+    let mut configs: Vec<simulator::Config> = Vec::new();
+    if let Err(e) = simulator::get_configs(&mut configs) {
+        error!("config file not processed - {e}");
+        exit(1);
+    }
+
+    // Create aggregated FX Book
+    let mut fx_book = aggregator::new(&configs);
+
+    // Create "FIX" log file
     let mut writer = fx_sim_agg::create_log_file("logs/fix.log");
 
     fx_sim_agg::run(async {
@@ -20,7 +35,7 @@ fn main() {
 
         // Combine all individual market data streams from each liquidity provider into a single merged stream
         // that yields values in the order they arrive from the source market data streams
-        let mut merged_streams_map = simulator::start_streams(&config);
+        let mut merged_streams_map = simulator::start_streams(&configs);
 
         while let Some(val) = merged_streams_map.next().await {
             // await polls the future until future returns Ready.

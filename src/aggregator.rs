@@ -6,46 +6,8 @@ use core::f64;
 //use log::{debug, error, info, trace, warn};
 use log::{error, info};
 use std::cmp::Ordering;
-use std::fmt;
-use std::fmt::Display;
-use std::fmt::Formatter;
-use std::num::ParseFloatError;
-use std::num::ParseIntError;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum AggError {
-    NumPrarams,
-    IsEmpty,
-    ParseFloat(ParseFloatError),
-    ParseInt(ParseIntError),
-}
-
-impl From<ParseFloatError> for AggError {
-    fn from(error: ParseFloatError) -> Self {
-        Self::ParseFloat(error)
-    }
-}
-
-impl From<ParseIntError> for AggError {
-    fn from(error: ParseIntError) -> Self {
-        Self::ParseInt(error)
-    }
-}
-
-impl Display for AggError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::IsEmpty => f.write_str("empty market data field"),
-            Self::NumPrarams => f.write_str("missing market data fields"),
-            Self::ParseFloat(e) => Display::fmt(e, f),
-            Self::ParseInt(e) => Display::fmt(e, f),
-        }
-    }
-}
-
-impl std::error::Error for AggError {}
 #[derive(Debug)]
 pub struct FxAggBookEntry {
     pub lp_vol: Vec<(String, i32)>,
@@ -74,7 +36,7 @@ pub struct FxBook {
 }
 
 impl FxBook {
-    pub fn update(&mut self, market_data: String) -> Result<(), AggError> {
+    pub fn update(&mut self, market_data: String) -> Result<(), fx_sim_agg::AppError> {
         // add fxbook entries for all current market data in the order of
         // 1M buy, 1M sell, 3M buy, 3M sell, 5M buy, 5M sell
         add_market_data(self, market_data)?;
@@ -91,12 +53,12 @@ impl FxBook {
     }
 }
 
-fn add_market_data(fx_book: &mut FxBook, market_data: String) -> Result<(), AggError> {
+fn add_market_data(fx_book: &mut FxBook, market_data: String) -> Result<(), fx_sim_agg::AppError> {
     let mut vol_prices_vec: Vec<(i32, f64, String)> = Vec::new();
 
-    let mut market_data_params = get_market_data_params(&market_data)?;
-    let liquidity_provider = get_str_field(market_data_params.next())?;
-    let _currency_pair = get_str_field(market_data_params.next())?;
+    let mut market_data_params = fx_sim_agg::get_params(&market_data, 9)?;
+    let liquidity_provider = fx_sim_agg::get_str_field(market_data_params.next())?;
+    let _currency_pair = fx_sim_agg::get_str_field(market_data_params.next())?;
     let one_mill_buy_price: f64 = market_data_params.next().unwrap_or("").trim().parse()?;
     vol_prices_vec.push((1, one_mill_buy_price, String::from("Buy")));
     let one_mill_sell_price: f64 = market_data_params.next().unwrap_or("").trim().parse()?;
@@ -133,24 +95,6 @@ fn add_market_data(fx_book: &mut FxBook, market_data: String) -> Result<(), AggE
     }
 
     Ok(())
-}
-
-fn get_market_data_params(data: &str) -> Result<std::str::Split<'_, &str>, AggError> {
-    let value = data.split("|");
-    if value.clone().count() < 9 {
-        return Err(AggError::NumPrarams);
-    } else {
-        Ok(data.split("|"))
-    }
-}
-
-fn get_str_field(field: Option<&str>) -> Result<&str, AggError> {
-    let value = field.unwrap_or("");
-    if value.trim().is_empty() {
-        return Err(AggError::IsEmpty);
-    } else {
-        Ok(value)
-    }
 }
 
 fn check_expired_quotes(
