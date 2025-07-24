@@ -1,7 +1,6 @@
 mod aggregator;
 mod simulator;
 use std::process::exit;
-
 //use log::{debug, error, info, trace, warn};
 use log::error;
 use log4rs;
@@ -14,18 +13,24 @@ fn main() {
         exit(1);
     }
 
+    // Create "FIX" log file
+    let mut writer = match fx_sim_agg::create_log_file("logs/fix.log") {
+        Ok(writer) => writer,
+        Err(e) => {
+            error!("problem creating log file - {e}");
+            exit(1);
+        }
+    };
+
     // read config file to get configs for each liquidity provider source
     let mut configs: Vec<simulator::Config> = Vec::new();
     if let Err(e) = simulator::get_configs(&mut configs) {
-        error!("config file not processed - {e}");
+        error!("config input file not processed - {e}");
         exit(1);
     }
 
     // Create aggregated FX Book
     let mut fx_book = aggregator::new(&configs);
-
-    // Create "FIX" log file
-    let mut writer = fx_sim_agg::create_log_file("logs/fix.log");
 
     fx_sim_agg::run(async {
         /*  async returns a future rather than blocking current thread
@@ -43,7 +48,9 @@ fn main() {
             let (_key, market_data) = val;
 
             // write market data to a "FIX" log
-            fx_sim_agg::write_to_fix_log(&mut writer, &market_data);
+            if let Err(e) = fx_sim_agg::write_to_fix_log(&mut writer, &market_data) {
+                error!("problem writing to FIX log - {e}");
+            }
 
             // Update the Fx Book with the new market data
             if let Err(e) = fx_book.update(market_data) {

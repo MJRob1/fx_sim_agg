@@ -57,23 +57,21 @@ pub fn run<F: Future>(future: F) -> F::Output {
     rt.block_on(future)
 }
 
-pub fn create_log_file(filepath: &str) -> BufWriter<File> {
-    let path = Path::new(filepath);
-    let display = path.display();
+pub fn create_log_file(file_path: &str) -> Result<BufWriter<File>, AppError> {
+    let path = Path::new(file_path);
 
     // Open a file in write-only mode, returns `io::Result<File>`
-    let file = match File::create(&path) {
-        Err(why) => panic!("couldn't create {}: {}", display, why),
-        Ok(file) => file,
-    };
+    let file = File::create(&path)?;
 
-    BufWriter::new(file)
+    Ok(BufWriter::new(file))
 }
 
-pub fn write_to_fix_log(writer: &mut BufWriter<File>, market_data: &String) {
-    if let Err(error) = writeln!(writer, "{}", market_data) {
-        eprintln!("Problem writing to log file, {}", error);
-    }
+pub fn write_to_fix_log(
+    writer: &mut BufWriter<File>,
+    market_data: &String,
+) -> Result<(), AppError> {
+    writeln!(writer, "{}", market_data)?;
+    Ok(())
 }
 
 pub fn get_params(data: &str, number: usize) -> Result<std::str::Split<'_, &str>, AppError> {
