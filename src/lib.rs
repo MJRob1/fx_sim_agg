@@ -88,6 +88,6 @@ pub fn get_str_field(field: Option<&str>) -> Result<&str, AppError> {
     if value.trim().is_empty() {
         return Err(AppError::IsEmpty);
     } else {
-        Ok(value)
+        Ok(value.trim())
     }
 }
