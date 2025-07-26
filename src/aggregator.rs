@@ -1,3 +1,6 @@
+//! # FX Simulator and Aggregator - fx_sim_agg
+//!
+//! `aggregator.rs` aggregates simulated FX market data streams into a real-time book of buys and sells.
 use crate::simulator::Config;
 extern crate chrono;
 use chrono::Utc;

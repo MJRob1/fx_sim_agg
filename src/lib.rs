@@ -1,3 +1,11 @@
+//! # FX Simulator and Aggregator - fx_sim_agg
+//!
+//! `fx_sim_agg` simulates FX market data streams and aggregates them into a real-time book of buys and sells.
+//!
+//! - `main.rs` combines all the individual asynchronous market data streams from each liquidity provider into a single merged stream
+//! that yields values in the order they arrive from the source market data streams
+//! - `simulator.rs` generates simulated FX market data and sends the data as asynchronous market data streams
+//! - `aggregator.rs` updates and aggregates the asynchronous data streams into a real-time FX book of buys and sells
 use std::fmt;
 use std::fmt::Display;
 use std::fmt::Formatter;
