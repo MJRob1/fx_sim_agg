@@ -313,7 +313,7 @@ pub fn print_fxbook_as_ladder(fx_book: &mut FxBook) {
         fx_book.currency_pair,
         datetime.format("%Y-%m-%d %H:%M:%S.%f").to_string()
     );
-    println!("Side\t Price\t Volume(M)\t\t (Liquidity Providers : Volumes(M))");
+    println!("Side\t Price\t Volume(M)\t (Liquidity Providers : Volumes(M))");
     println!("===================================================================");
     print_sell_side(fx_book);
     println!("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
