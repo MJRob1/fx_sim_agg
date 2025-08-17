@@ -55,6 +55,28 @@ impl FxBook {
         maintain_min_spread(self);
         Ok(())
     }
+    pub fn new(config: &Vec<Config>) -> Self {
+        // create a new FxBook with empty buy and sell books
+        // and a timestamp of current time
+        // using first config entry to get currency pair
+        let currency_pair = config[0].currency_pair.clone();
+        let buy_book: Vec<FxAggBookEntry> = Vec::new();
+        let sell_book: Vec<FxAggBookEntry> = Vec::new();
+        //need to catch this possible panic on unwrap when converting u126 to u64
+        let timestamp: u64 = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+            .try_into()
+            .unwrap();
+
+        FxBook {
+            currency_pair,
+            buy_book,
+            sell_book,
+            timestamp,
+        }
+    }
 }
 
 fn add_market_data(fx_book: &mut FxBook, market_data: String) -> Result<(), fx_sim_agg::AppError> {
@@ -281,26 +303,6 @@ fn get_book_side<'a>(fx_book: &'a mut FxBook, side: &str) -> &'a mut Vec<FxAggBo
         &mut fx_book.buy_book
     } else {
         &mut fx_book.sell_book
-    }
-}
-
-pub fn new(config: &Vec<Config>) -> FxBook {
-    let currency_pair = config[0].currency_pair.clone();
-    let buy_book: Vec<FxAggBookEntry> = Vec::new();
-    let sell_book: Vec<FxAggBookEntry> = Vec::new();
-    //need to catch this possible panic on unwrap when converting u126 to u64
-    let timestamp: u64 = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos()
-        .try_into()
-        .unwrap();
-
-    FxBook {
-        currency_pair,
-        buy_book,
-        sell_book,
-        timestamp,
     }
 }
 

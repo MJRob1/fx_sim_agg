@@ -15,6 +15,8 @@ use log::error;
 use log4rs;
 use tokio_stream::StreamExt;
 
+use crate::aggregator::FxBook;
+
 fn main() {
     // start log4rs logging framework
     if let Err(e) = log4rs::init_file("logging_config.yaml", Default::default()) {
@@ -39,7 +41,7 @@ fn main() {
     }
 
     // Create aggregated FX Book
-    let mut fx_book = aggregator::new(&configs);
+    let mut fx_book = FxBook::new(&configs);
 
     fx_sim_agg::run(async {
         /*  async returns a future rather than blocking current thread
