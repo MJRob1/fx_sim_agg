@@ -1,4 +1,4 @@
-//! # FX Simulator and Aggregator - fx_sim_agg_gui
+//! # FX Simulator and Aggregator - fx_sim_agg
 //!
 //! `fx_sim_agg_gui` simulates FX market data streams and aggregates them into a real-time book of buys and sells.
 //! A separate thread renders the FX updates in real-time to a GUI.
