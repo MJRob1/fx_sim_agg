@@ -1,7 +1,8 @@
-//! # FX Simulator and Aggregator - fx_sim_agg
+//! # FX Simulator and Aggregator - fx_sim_agg_gui
 //!
 //! `aggregator.rs` aggregates simulated FX market data streams into a real-time book of buys and sells.
 use crate::simulator::Config;
+use crate::{AppError, get_params, get_str_field};
 extern crate chrono;
 use chrono::Utc;
 use chrono::prelude::DateTime;
@@ -30,7 +31,7 @@ impl PartialOrd for FxAggBookEntry {
         self.price.partial_cmp(&other.price)
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct FxBook {
     pub currency_pair: String,
     pub buy_book: Vec<FxAggBookEntry>,
@@ -39,16 +40,18 @@ pub struct FxBook {
 }
 
 impl FxBook {
-    pub fn update(&mut self, market_data: String) -> Result<(), fx_sim_agg::AppError> {
+    pub fn update(&mut self, market_data: String) -> Result<(), AppError> {
         // add fxbook entries for all current market data in the order of
         // 1M buy, 1M sell, 3M buy, 3M sell, 5M buy, 5M sell
         add_market_data(self, market_data)?;
         sort_books(self);
         match check_books_crossed(self) {
             Some(index) => {
-                info!("books crossed at index {}", index);
-                let fx_book_side = get_book_side(self, "Sell");
-                remove_range_entries_from_top(fx_book_side, index)
+                info!(
+                    "books crossed at sell book index {} with sell price {}",
+                    index.0, index.1
+                );
+                correct_crossed_books(self, index)?;
             }
             None => (),
         }
@@ -79,12 +82,38 @@ impl FxBook {
     }
 }
 
-fn add_market_data(fx_book: &mut FxBook, market_data: String) -> Result<(), fx_sim_agg::AppError> {
+fn correct_crossed_books(fx_book: &mut FxBook, index: (usize, f64)) -> Result<(), AppError> {
+    // when books have crossed then need to remove all entries above the cross price from the
+    // top of the book that has the highest number of entries
+    if fx_book.buy_book.len() > fx_book.sell_book.len() {
+        let fx_book_side = get_book_side(fx_book, "Buy");
+        info!("buy book longer than sell book when books have crossed");
+        if let Some(position) = find_buy_index_when_crossed(fx_book_side, index.1) {
+            // remove all buy entries >= new sell price
+            info!(
+                "removing all buy entries from top of book to index {}",
+                position
+            );
+            remove_range_entries_from_top(fx_book_side, position, "Buy");
+        }
+    } else {
+        // remove all sell entries <= new buy price
+        let fx_book_side = get_book_side(fx_book, "Sell");
+        info!(
+            "removing all sell entries from top of book to index {}",
+            index.0
+        );
+        remove_range_entries_from_top(fx_book_side, index.0, "Sell");
+    }
+
+    Ok(())
+}
+fn add_market_data(fx_book: &mut FxBook, market_data: String) -> Result<(), AppError> {
     let mut vol_prices_vec: Vec<(i32, f64, String)> = Vec::new();
 
-    let mut market_data_params = fx_sim_agg::get_params(&market_data, 9)?;
-    let liquidity_provider = fx_sim_agg::get_str_field(market_data_params.next())?;
-    let _currency_pair = fx_sim_agg::get_str_field(market_data_params.next())?;
+    let mut market_data_params = get_params(&market_data, 9)?;
+    let liquidity_provider = get_str_field(market_data_params.next())?;
+    let _currency_pair = get_str_field(market_data_params.next())?;
     let one_mill_buy_price: f64 = market_data_params.next().unwrap_or("").trim().parse()?;
     vol_prices_vec.push((1, one_mill_buy_price, String::from("Buy")));
     let one_mill_sell_price: f64 = market_data_params.next().unwrap_or("").trim().parse()?;
@@ -134,15 +163,10 @@ fn check_expired_quotes(
     // side: &str,
     volume: i32,
 ) -> Option<usize> {
-    // compiler does not allow you to use fx_book.buy/sell_side as reference but
-    // does let you create this new local reference from within that reference!
-    // But need to use lifetime in get_book_side function to guarantee that fxbook
-    // reference outlives this local reference
-    //  let fx_book_side = get_book_side(fx_book, side);
+    // check to see if there is an expired quote from this liquidity provider
     let mut index = 0;
     let mut index_to_remove: usize = 0;
     let mut remove_entry = false;
-    // let mut total_volume = 0;
     for entry in fx_book_side {
         let mut total_volume = 0;
         let lp_vol_vec: &mut Vec<(String, i32)> = &mut entry.lp_vol;
@@ -248,7 +272,23 @@ fn sort_sell_book(fx_sell_book: &mut Vec<FxAggBookEntry>) {
     fx_sell_book.sort_by(|a, b| a.price.partial_cmp(&b.price).unwrap());
 }
 
-fn check_books_crossed(fx_book: &mut FxBook) -> Option<usize> {
+fn find_buy_index_when_crossed(
+    fx_buy_book: &mut Vec<FxAggBookEntry>,
+    sell_price: f64,
+) -> Option<usize> {
+    // when books have crossed and buy book is longer than sell book
+    // then need to find where buy price crosses on sell side and remove
+    // all buy entries >= new sell price
+
+    for i in (0..fx_buy_book.len()).rev() {
+        if fx_buy_book[i].price >= sell_price {
+            return Some(i);
+        }
+    }
+    return None;
+}
+
+fn check_books_crossed(fx_book: &mut FxBook) -> Option<(usize, f64)> {
     let top_of_buy_book_price = fx_book.buy_book[0].price;
     let fx_book_side = get_book_side(fx_book, "Sell");
 
@@ -256,7 +296,7 @@ fn check_books_crossed(fx_book: &mut FxBook) -> Option<usize> {
     // so find where buy price crosses on sell side and remove all sell entries <= new buy price
     for i in (0..fx_book_side.len()).rev() {
         if top_of_buy_book_price >= fx_book_side[i].price {
-            return Some(i);
+            return Some((i, fx_book_side[i].price));
         }
     }
     return None;
@@ -278,12 +318,12 @@ fn maintain_min_spread(fx_book: &mut FxBook) {
     }
 }
 
-fn remove_range_entries_from_top(fx_book_side: &mut Vec<FxAggBookEntry>, index: usize) {
+fn remove_range_entries_from_top(fx_book_side: &mut Vec<FxAggBookEntry>, index: usize, side: &str) {
     //  let fx_book_side = get_book_side(fx_book, side);
     for i in 0..index + 1 {
         // because of removal of [0] entry then entry to remove is always the top one [0]
         fx_book_side.remove(0);
-        info!("removing entry {} from sell book", i);
+        info!("removing entry {} from {} book", i, side);
     }
 }
 
@@ -683,7 +723,7 @@ mod tests {
             timestamp: 1753430617683973406,
         };
 
-        assert_eq!(check_books_crossed(&mut fx_book), Some(0));
+        assert_eq!(check_books_crossed(&mut fx_book), Some((0, 1.5558)));
     }
 
     #[test]
@@ -728,7 +768,7 @@ mod tests {
                 side: String::from("Buy"),
             },
         ];
-        remove_range_entries_from_top(&mut fx_buy_book, 1);
+        remove_range_entries_from_top(&mut fx_buy_book, 1, "Buy");
         assert_eq!(
             fx_buy_book,
             vec![
@@ -844,5 +884,78 @@ mod tests {
                 },
             ]
         )
+    }
+    #[test]
+    fn test_find_buy_index_when_crossed() {
+        let mut fx_book = FxBook {
+            currency_pair: String::from(" USD/EUR"),
+            buy_book: vec![
+                FxAggBookEntry {
+                    lp_vol: vec![
+                        (String::from("MS "), 1),
+                        (String::from("UBS "), 5),
+                        (String::from("CITI "), 3),
+                        (String::from("BARX "), 3),
+                    ],
+                    volume: 12,
+                    price: 1.5566,
+                    side: String::from("Buy"),
+                },
+                FxAggBookEntry {
+                    lp_vol: vec![
+                        (String::from("MS "), 3),
+                        (String::from("JPMC "), 1),
+                        (String::from("CITI "), 5),
+                    ],
+                    volume: 9,
+                    price: 1.5565,
+                    side: String::from("Buy"),
+                },
+                FxAggBookEntry {
+                    lp_vol: vec![(String::from("UBS "), 1)],
+                    volume: 1,
+                    price: 1.5553,
+                    side: String::from("Buy"),
+                },
+                FxAggBookEntry {
+                    lp_vol: vec![
+                        (String::from("UBS "), 3),
+                        (String::from("CITI "), 1),
+                        (String::from("BARX "), 1),
+                        (String::from("BARX "), 5),
+                    ],
+                    volume: 10,
+                    price: 1.5554,
+                    side: String::from("Buy"),
+                },
+            ],
+            sell_book: vec![
+                FxAggBookEntry {
+                    lp_vol: vec![(String::from("MS "), 3), (String::from("JPMC "), 5)],
+                    volume: 8,
+                    price: 1.5565,
+                    side: String::from("Sell"),
+                },
+                FxAggBookEntry {
+                    lp_vol: vec![
+                        (String::from("UBS "), 3),
+                        (String::from("CITI "), 3),
+                        (String::from("BARX "), 3),
+                    ],
+                    volume: 9,
+                    price: 1.5563,
+                    side: String::from("Sell"),
+                },
+                FxAggBookEntry {
+                    lp_vol: vec![(String::from("JPMC "), 1)],
+                    volume: 1,
+                    price: 1.5567,
+                    side: String::from("Sell"),
+                },
+            ],
+            timestamp: 1753430617683973406,
+        };
+        let fx_book_side = get_book_side(&mut fx_book, "Buy");
+        assert_eq!(find_buy_index_when_crossed(fx_book_side, 1.5565), Some(1));
     }
 }

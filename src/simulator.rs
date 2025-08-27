@@ -1,11 +1,13 @@
 use core::f64;
 //use log::{debug, error, info, trace, warn};
-use log::error;
+use log::{error, info};
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::{spawn, sync::mpsc::unbounded_channel, time::sleep};
 use tokio_stream::{Stream, StreamMap, wrappers::UnboundedReceiverStream};
+
+use crate::{AppError, get_str_field};
 
 #[derive(Debug)]
 pub struct Config {
@@ -18,16 +20,16 @@ pub struct Config {
     pub run_iterations: i32,
 }
 
-pub fn get_configs(configs: &mut Vec<Config>) -> Result<(), fx_sim_agg::AppError> {
+pub fn get_configs(configs: &mut Vec<Config>) -> Result<(), AppError> {
     let parameters = read_config_file("resources/config.txt")?;
     let mut index = 0;
     for i in &parameters {
         // ignore header line in config file
         if index > 0 {
             let mut fx_params = i.split(",");
-            // let mut fx_params = fx_sim_agg::get_params(i, 7)?;
-            let liquidity_provider = fx_sim_agg::get_str_field(fx_params.next())?;
-            let currency_pair = fx_sim_agg::get_str_field(fx_params.next())?;
+            // let mut fx_params = fx_sim_agg_gui::get_params(i, 7)?;
+            let liquidity_provider = get_str_field(fx_params.next())?;
+            let currency_pair = get_str_field(fx_params.next())?;
             let buy_price: f64 = fx_params.next().unwrap_or("").trim().parse()?;
             let mut spread: f64 = fx_params.next().unwrap_or("").trim().parse()?;
             spread = spread / 10000.0;
@@ -55,7 +57,7 @@ pub fn get_configs(configs: &mut Vec<Config>) -> Result<(), fx_sim_agg::AppError
     Ok(())
 }
 
-fn read_config_file<P: AsRef<Path>>(file_path: P) -> Result<Vec<String>, fx_sim_agg::AppError> {
+fn read_config_file<P: AsRef<Path>>(file_path: P) -> Result<Vec<String>, AppError> {
     let contents: String = fs::read_to_string(file_path)?;
     let results = contents.lines().map(String::from).collect();
     Ok(results)
@@ -129,6 +131,9 @@ pub fn get_marketdata(config: &Config) -> impl Stream<Item = String> {
                 break;
             };
         }
+
+        // number of iterations done so exit the program
+        info!("{} stream completed", liquidity_provider);
     });
 
     UnboundedReceiverStream::new(rx)
