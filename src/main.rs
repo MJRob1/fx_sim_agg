@@ -1,6 +1,6 @@
 //! # FX Simulator and Aggregator - fx_sim_agg
 //!
-//! `fx_sim_agg_gui` simulates FX market data streams and aggregates them into a real-time book of buys and sells.
+//! `fx_sim_agg` simulates FX market data streams and aggregates them into a real-time book of buys and sells.
 //! A separate thread renders the FX updates in real-time to a GUI.
 //!
 //! - `main.rs`  Defines and initiates the UI runtime (which in turn intiates the asynchronous fx simuation and aggregation runtime). Also initiates log4rs logging framework
